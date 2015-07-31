@@ -30,13 +30,11 @@ import org.slf4j.Logger;
 import org.xwiki.component.annotation.Component;
 import org.xwiki.script.service.ScriptService;
 
-import com.atlassian.jira.rest.client.AuthenticationHandler;
-import com.atlassian.jira.rest.client.JiraRestClient;
-import com.atlassian.jira.rest.client.NullProgressMonitor;
-import com.atlassian.jira.rest.client.ProgressMonitor;
+import com.atlassian.jira.rest.client.api.AuthenticationHandler;
+import com.atlassian.jira.rest.client.api.JiraRestClient;
 import com.atlassian.jira.rest.client.auth.AnonymousAuthenticationHandler;
 import com.atlassian.jira.rest.client.auth.BasicHttpAuthenticationHandler;
-import com.atlassian.jira.rest.client.internal.jersey.JerseyJiraRestClientFactory;
+import com.atlassian.jira.rest.client.internal.async.AsynchronousJiraRestClientFactory;
 
 /**
  * Expose Atlassian's JIRA REST service to XWiki scripts.
@@ -81,17 +79,6 @@ public class JiraScriptService implements ScriptService
     }
 
     /**
-     * Since all JRJC APIs require to be passed a {@link ProgressMonitor} this method makes it easy to get one
-     * (especially useful from Velocity scripts since they can't do any new).
-     *
-     * @return a {@link ProgressMonitor} that doesn't do anything
-     */
-    public ProgressMonitor getNullProgressMonitor()
-    {
-        return new NullProgressMonitor();
-    }
-
-    /**
      * @param jiraURL the URL to the remote JIRA instance to connect to
      * @param authenticationHandler the authentication to use (anonymous, basic, etc)
      * @return the client to interact with the remote JIRA instance
@@ -100,7 +87,7 @@ public class JiraScriptService implements ScriptService
     {
         JiraRestClient restClient;
         try {
-            JerseyJiraRestClientFactory factory = new JerseyJiraRestClientFactory();
+            AsynchronousJiraRestClientFactory factory = new AsynchronousJiraRestClientFactory();
             URI jiraServerUri = new URI(jiraURL);
             restClient = factory.create(jiraServerUri, authenticationHandler);
         } catch (URISyntaxException e) {

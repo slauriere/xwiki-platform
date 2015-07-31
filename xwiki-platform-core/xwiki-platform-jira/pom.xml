@@ -43,8 +43,51 @@
     </dependency>
     <dependency>
       <groupId>com.atlassian.jira</groupId>
-      <artifactId>jira-rest-java-client</artifactId>
-      <version>0.3.1</version>
+      <artifactId>jira-rest-java-client-core</artifactId>
+      <version>3.0.0</version>
+      <exclusions>
+        <exclusion>
+          <groupId>commons-logging</groupId>
+          <artifactId>commons-logging</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.httpcomponents</groupId>
+          <artifactId>httpasyncclient</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>org.apache.httpcomponents</groupId>
+          <artifactId>httpasyncclient-cache</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <!-- Since XWiki requires httpcore 4.4.1+, we get an XWiki error at startup if we use the httpasyncclient version
+         provided transitively by jira-rest-java-client-core. This is why we exclude it above and add it again here.
+         However the version drawn transitively by jira-rest-java-client-core is a patched version from Atlassian and
+         not using it leads to the JIRA REST API to generate:
+           Caused by: java.lang.NoSuchMethodError: org.apache.http.impl.client.cache.CacheConfig.is303CachingEnabled()
+         See https://ecosystem.atlassian.net/browse/JRJC-207 & http://jira.xwiki.org/browse/XWIKI-12364
+    -->
+    <dependency>
+      <groupId>org.apache.httpcomponents</groupId>
+      <artifactId>httpasyncclient</artifactId>
+      <version>4.1</version>
+      <exclusions>
+        <exclusion>
+          <groupId>commons-logging</groupId>
+          <artifactId>commons-logging</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.httpcomponents</groupId>
+      <artifactId>httpasyncclient-cache</artifactId>
+      <version>4.1</version>
+      <exclusions>
+        <exclusion>
+          <groupId>commons-logging</groupId>
+          <artifactId>commons-logging</artifactId>
+        </exclusion>
+      </exclusions>
     </dependency>
   </dependencies>
 </project>
