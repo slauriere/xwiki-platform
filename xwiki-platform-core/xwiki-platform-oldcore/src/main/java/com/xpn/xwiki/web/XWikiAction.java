@@ -20,6 +20,7 @@
 package com.xpn.xwiki.web;
 
 import java.io.IOException;
+import java.net.URL;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
@@ -52,7 +53,10 @@ import org.xwiki.job.internal.DefaultJobProgress;
 import org.xwiki.localization.ContextualLocalizationManager;
 import org.xwiki.model.EntityType;
 import org.xwiki.model.reference.DocumentReference;
+import org.xwiki.model.reference.EntityReferenceProvider;
+import org.xwiki.model.reference.EntityReferenceSerializer;
 import org.xwiki.model.reference.EntityReferenceValueProvider;
+import org.xwiki.model.reference.SpaceReference;
 import org.xwiki.observation.ObservationManager;
 import org.xwiki.observation.WrappedThreadEventListener;
 import org.xwiki.rendering.internal.transformation.MutableRenderingContext;
@@ -301,6 +305,11 @@ public abstract class XWikiAction extends Action
 
             XWikiURLFactory urlf = xwiki.getURLFactoryService().createURLFactory(context.getMode(), context);
             context.setURLFactory(urlf);
+
+            // Handle ability to enter space URLs and convert them to page URLs (Nested Documents)
+            if (redirectSpaceURLs(action, urlf, xwiki, context)) {
+                return null;
+            }
 
             String sajax = context.getRequest().get("ajax");
             boolean ajax = false;
@@ -778,5 +787,54 @@ public abstract class XWikiAction extends Action
                 "Access denied, secret token verification failed", exception);
         }
         return true;
+    }
+
+    /**
+     * In order to let users enter URLs to Spaces we do the following when receiving {@code /A/B}
+     * (where A and B are spaces):
+     * <ul>
+     *   <li>check that the action is "view" (we only support this for the view action since otherwise this
+     *       would break apps written before this concept was introduced in XWiki 7.2M1)</li>
+     *   <li>if A.B exists then continue</li>
+     *   <li> if A.B doesn't exist then forward to A.B.WebHome</li>
+     * </ul>
+     * In order to disable this redirect you should provide the {@code spaceRedirect=false} Query String parameter and
+     * value.
+     *
+     * @since 7.2M1
+     */
+    private boolean redirectSpaceURLs(String action, XWikiURLFactory urlf, XWiki xwiki, XWikiContext context)
+        throws Exception
+    {
+        if ("view".equals(action) && !"false".equalsIgnoreCase(context.getRequest().getParameter("spaceRedirect"))) {
+            DocumentReference reference = xwiki.getDocumentReference(context.getRequest(), context);
+            if (!xwiki.exists(reference, context)) {
+                String defaultDocumentName = Utils.getComponent(EntityReferenceProvider.class).getDefaultReference(
+                    EntityType.DOCUMENT).getName();
+                // Avoid an infinite loop by ensuring we're not on a WebHome already
+                if (!reference.getName().equals(defaultDocumentName)) {
+                    // Consider the reference as a Space Reference and Construct a new reference to the home of that
+                    // Space. Then generate the URL for it and forward to it
+                    SpaceReference spaceReference = new SpaceReference(reference.getName(), reference.getParent());
+                    EntityReferenceSerializer<String> localSerializer =
+                        Utils.getComponent(EntityReferenceSerializer.TYPE_STRING, "local");
+                    // Extract the anchor
+                    String anchor = new URL(context.getRequest().getRequestURL().toString()).getRef();
+                    URL forwardURL = urlf.createURL(localSerializer.serialize(spaceReference), defaultDocumentName,
+                        action, context.getRequest().getQueryString(), anchor,
+                        spaceReference.getWikiReference().getName(), context);
+                    // Since createURL() contain the webapp context and since RequestDispatcher should not contain it,
+                    // we need to remove it!
+                    String webappContext = xwiki.getWebAppPath(context);
+                    String relativeURL = urlf.getURL(forwardURL, context);
+                    relativeURL = '/' + StringUtils.substringAfter(relativeURL, webappContext);
+                    context.getRequest().getRequestDispatcher(relativeURL).forward(
+                        context.getRequest(), context.getResponse());
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 }

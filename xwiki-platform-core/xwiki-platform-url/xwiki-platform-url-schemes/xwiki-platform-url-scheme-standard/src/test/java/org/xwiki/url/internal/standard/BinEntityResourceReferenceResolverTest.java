@@ -101,9 +101,15 @@ public class BinEntityResourceReferenceResolverTest
         testCreateResource("http://localhost/bin/", "view", this.wikiReference, fullSingleSpaceReference,
             EntityType.DOCUMENT);
 
-        // Test when page segment
-        testCreateResource("http://localhost/bin/page", "view", buildEntityReference("wiki", null, "page"),
-            fullSingleSpaceReference, EntityType.DOCUMENT);
+        // Test when single space segment, to be Nested Document friendly.
+        // Normally the last segment is always the page name but we want to handle a special case when we
+        // have "/view/something" and we wish in this case to consider that "something" is the space. This
+        // is to handle Nested Documents, so that the user can have a top level Nested Document
+        // (something.WebHome) and access it from /view/something. If we didn't handle this special case
+        // the user would get Main.something and thus wouldn't be able to access something.WebHome. He'd
+        // need to use /view/something/ which is not natural in the Nested Document mode.
+        testCreateResource("http://localhost/bin/space", "view",
+            buildEntityReference("wiki", Arrays.asList("space"), null), fullSingleSpaceReference, EntityType.DOCUMENT);
 
         // Test when 1 space segment and trailing slash
         testCreateResource("http://localhost/bin/space/", "view",
@@ -143,6 +149,10 @@ public class BinEntityResourceReferenceResolverTest
         EntityReference fullSingleSpaceReference = buildEntityReference("wiki", Arrays.asList("space"), "page");
         EntityReference fullTwoSpacesReference =
             buildEntityReference("wiki", Arrays.asList("space1", "space2"), "page");
+
+        // Test when 1 space segment to be Nested Document friendly (see the test above for more explanations)
+        testCreateResource("http://localhost/bin/view/space", "view",
+            buildEntityReference("wiki", Arrays.asList("space"), null), fullSingleSpaceReference, EntityType.DOCUMENT);
 
         // Test when 1 space segment and trailing slash
         testCreateResource("http://localhost/bin/view/space/", "view",
@@ -192,6 +202,11 @@ public class BinEntityResourceReferenceResolverTest
             singleSpaceReference, singleSpaceReference, EntityType.ATTACHMENT);
         testCreateResource("http://localhost/bin/viewattachrev/space1/space2/page/attachment.ext", "viewattachrev",
             twoSpaceReference, twoSpaceReference, EntityType.ATTACHMENT);
+
+        testCreateResource("http://localhost/bin/downloadrev/space/page/attachment.ext", "downloadrev",
+            singleSpaceReference, singleSpaceReference, EntityType.ATTACHMENT);
+        testCreateResource("http://localhost/bin/downloadrev/space1/space2/page/attachment.ext", "downloadrev",
+            twoSpaceReference, twoSpaceReference, EntityType.ATTACHMENT);
     }
 
     @Test
@@ -215,14 +230,6 @@ public class BinEntityResourceReferenceResolverTest
         expectedMap = new LinkedHashMap<>();
         expectedMap.put("param", Collections.<String>emptyList());
         assertEquals(expectedMap, resource.getParameters());
-    }
-
-    @Test
-    public void createResourceWhenUsingBinEvenThoughPathConfiguredAsEntity() throws Exception
-    {
-        EntityReference fullReference = buildEntityReference("wiki", Arrays.asList("space"), "page");
-        testCreateResource("http://localhost/bin/space/page", "view", fullReference, fullReference,
-            EntityType.DOCUMENT);
     }
 
     private ResourceReference testCreateResource(String testURL, String expectedActionName,

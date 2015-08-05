@@ -33,7 +33,7 @@ import org.xwiki.model.reference.EntityReferenceResolver;
  * Component used to extract a {@link DocumentReference} from a {@link SolrDocument}.
  * 
  * @version $Id$
- * @since 7.2M1
+ * @since 7.2M2
  */
 @Component
 @Singleton

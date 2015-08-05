@@ -175,8 +175,9 @@ public class SolrQueryExecutorTest
         when(response.getResults()).thenReturn(results);
         when(this.solr.query(any(SolrParams.class))).thenReturn(response);
 
-        assertEquals(Arrays.asList(response),
-            this.componentManager.getComponentUnderTest().execute(new DefaultQuery("", null)));
+        DefaultQuery query = new DefaultQuery("", null);
+        query.checkCurrentUser(true);
+        assertEquals(Arrays.asList(response), this.componentManager.getComponentUnderTest().execute(query));
 
         assertEquals(1, results.getNumFound());
         assertEquals(Arrays.asList(carol), results);

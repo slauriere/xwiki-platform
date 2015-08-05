@@ -38,8 +38,6 @@ import org.apache.commons.lang3.LocaleUtils;
 import org.apache.solr.client.solrj.SolrQuery;
 import org.apache.solr.client.solrj.StreamingResponseCallback;
 import org.apache.solr.common.SolrDocument;
-import org.apache.solr.common.params.FacetParams;
-import org.apache.solr.common.params.HighlightParams;
 import org.slf4j.Logger;
 import org.xwiki.bridge.event.AbstractDocumentEvent;
 import org.xwiki.bridge.event.ApplicationReadyEvent;
@@ -76,7 +74,7 @@ public class SolrIndexAvailableLocalesListener implements EventListener
     /**
      * The events to listen to that trigger the index update.
      */
-    private static final List<Event> EVENTS = Arrays.<Event> asList(new DocumentUpdatedEvent(new RegexEventFilter(
+    private static final List<Event> EVENTS = Arrays.<Event>asList(new DocumentUpdatedEvent(new RegexEventFilter(
         PREFERENCEDOCUMENT_REGEX)), new DocumentUpdatedEvent(new RegexEventFilter(PREFERENCEDOCUMENT_REGEX)),
         new ApplicationReadyEvent(), new WikiReadyEvent(), new ApplicationReadyEvent());
 
@@ -162,9 +160,6 @@ public class SolrIndexAvailableLocalesListener implements EventListener
                     solrQuery.setFields(FieldUtils.WIKI, FieldUtils.DOCUMENT_PARENT_PATH, FieldUtils.DOCUMENT_NAME,
                         FieldUtils.DOCUMENT_FINAL, FieldUtils.DOCUMENT_LOCALE);
                     solrQuery.addFilterQuery(FieldUtils.TYPE + ':' + EntityType.DOCUMENT.name());
-                    // Speed up the query by disabling the faceting and the highlighting.
-                    solrQuery.set(FacetParams.FACET, false);
-                    solrQuery.set(HighlightParams.HIGHLIGHT, false);
 
                     StreamingResponseCallback callback = new StreamingResponseCallback()
                     {

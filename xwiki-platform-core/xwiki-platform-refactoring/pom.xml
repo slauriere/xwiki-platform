@@ -28,55 +28,11 @@
     <version>7.2-SNAPSHOT</version>
   </parent>
   <artifactId>xwiki-platform-refactoring</artifactId>
-  <name>XWiki Platform - Refactoring</name>
-  <description>XWiki Platform - Refactoring</description>
-  <properties>
-    <xwiki.jacoco.instructionRatio>0.88</xwiki.jacoco.instructionRatio>
-  </properties>
-  <dependencies>
-    <dependency>
-      <groupId>org.xwiki.platform</groupId>
-      <artifactId>xwiki-platform-bridge</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.xwiki.rendering</groupId>
-      <artifactId>xwiki-rendering-api</artifactId>
-      <version>${rendering.version}</version>
-    </dependency>
-
-    <!-- Testing dependencies -->
-    <dependency>
-      <groupId>org.xwiki.rendering</groupId>
-      <artifactId>xwiki-rendering-syntax-xwiki21</artifactId>
-      <version>${rendering.version}</version>
-      <scope>test</scope>
-    </dependency>
-  </dependencies>
-  <build>
-    <plugins>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-surefire-plugin</artifactId>
-        <configuration>
-          <excludes>
-            <exclude>**/Abstract*.java</exclude>
-          </excludes>
-        </configuration>
-      </plugin>
-      <plugin>
-        <!-- Apply the Checkstyle configurations defined in the top level pom.xml file -->
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-checkstyle-plugin</artifactId>
-        <configuration>
-          <excludes>
-            org/xwiki/refactoring/splitter/criterion/naming/HeadingNameNamingCriterion.java,
-            org/xwiki/refactoring/splitter/criterion/naming/PageIndexNamingCriterion.java,
-            org/xwiki/refactoring/splitter/criterion/SplittingCriterion.java,
-            org/xwiki/refactoring/WikiDocument.java
-          </excludes>
-        </configuration>
-      </plugin>
-    </plugins>
-  </build>
+  <name>XWiki Platform - Refactoring - Parent POM</name>
+  <packaging>pom</packaging>
+  <description>XWiki Platform - Refactoring - Parent POM</description>
+  <modules>
+    <module>xwiki-platform-refactoring-api</module>
+    <module>xwiki-platform-refactoring-default</module>
+  </modules>
 </project>

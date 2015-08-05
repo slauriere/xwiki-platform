@@ -34,8 +34,6 @@ import org.apache.solr.client.solrj.response.QueryResponse;
 import org.apache.solr.common.SolrDocument;
 import org.apache.solr.common.SolrDocumentList;
 import org.apache.solr.common.params.CursorMarkParams;
-import org.apache.solr.common.params.FacetParams;
-import org.apache.solr.common.params.HighlightParams;
 import org.xwiki.component.annotation.Component;
 import org.xwiki.component.annotation.InstantiationStrategy;
 import org.xwiki.component.descriptor.ComponentInstantiationStrategy;
@@ -151,9 +149,6 @@ public class SolrDocumentIterator extends AbstractDocumentIterator<String>
             // We sort by ID, which is normally the serialized document reference, in order to ensure this iterator has
             // the same order as the database iterator.
             query.addSort(FieldUtils.ID, ORDER.asc);
-            // Speed up the query by disabling the faceting and the highlighting.
-            query.set(FacetParams.FACET, false);
-            query.set(HighlightParams.HIGHLIGHT, false);
             // Paginate using a cursor because it performs better than basic pagination (using absolute offset,
             // especially when the offset is big) and because the impact of index modifications is much smaller (and we
             // plan to update the index to match the database during the synchronization process).

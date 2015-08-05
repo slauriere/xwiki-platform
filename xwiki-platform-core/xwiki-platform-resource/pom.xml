@@ -37,4 +37,12 @@
     <module>xwiki-platform-resource-default</module>
     <module>xwiki-platform-resource-servlet</module>
   </modules>
+  <profiles>
+    <profile>
+      <id>integration-tests</id>
+      <modules>
+        <module>xwiki-platform-resource-test</module>
+      </modules>
+    </profile>
+  </profiles>
 </project>

@@ -90,6 +90,8 @@ import org.xwiki.localization.ContextualLocalizationManager;
 import org.xwiki.localization.LocaleUtils;
 import org.xwiki.model.EntityType;
 import org.xwiki.model.internal.reference.LocalStringEntityReferenceSerializer;
+import org.xwiki.model.internal.reference.LocalUidStringEntityReferenceSerializer;
+import org.xwiki.model.reference.AttachmentReference;
 import org.xwiki.model.reference.DocumentReference;
 import org.xwiki.model.reference.DocumentReferenceResolver;
 import org.xwiki.model.reference.EntityReference;
@@ -539,11 +541,6 @@ public class XWikiDocument implements DocumentModelBridge, Cloneable
      */
     private EntityReferenceSerializer<String> uidStringEntityReferenceSerializer;
 
-    /**
-     * @see #getLocalUidStringEntityReferenceSerializer()
-     */
-    private EntityReferenceSerializer<String> localUidStringEntityReferenceSerializer;
-
     private Provider<OldRendering> oldRenderingProvider;
 
     private JobProgressManager progress;
@@ -708,19 +705,6 @@ public class XWikiDocument implements DocumentModelBridge, Cloneable
     }
 
     /**
-     * Used to compute document identifier.
-     */
-    private EntityReferenceSerializer<String> getLocalUidStringEntityReferenceSerializer()
-    {
-        if (this.localUidStringEntityReferenceSerializer == null) {
-            this.localUidStringEntityReferenceSerializer =
-                Utils.getComponent(EntityReferenceSerializer.TYPE_STRING, "local/uid");
-        }
-
-        return this.localUidStringEntityReferenceSerializer;
-    }
-
-    /**
      * Used to create proper {@link Syntax} objects.
      */
     private SyntaxFactory getSyntaxFactory()
@@ -807,7 +791,7 @@ public class XWikiDocument implements DocumentModelBridge, Cloneable
     private String getLocalKey()
     {
         if (this.localKeyCache == null) {
-            final String localUid = getLocalUidStringEntityReferenceSerializer().serialize(getDocumentReference());
+            final String localUid = LocalUidStringEntityReferenceSerializer.INSTANCE.serialize(getDocumentReference());
 
             if (StringUtils.isEmpty(getLanguage())) {
                 this.localKeyCache = localUid;
@@ -1843,10 +1827,7 @@ public class XWikiDocument implements DocumentModelBridge, Cloneable
 
     public String getAttachmentURL(String filename, String action, XWikiContext context)
     {
-        URL url =
-            context.getURLFactory().createAttachmentURL(filename, getSpace(), getName(), action, null, getDatabase(),
-                context);
-        return context.getURLFactory().getURL(url, context);
+        return getAttachmentURL(filename, action, null, context);
     }
 
     public String getExternalAttachmentURL(String filename, String action, XWikiContext context)
@@ -1859,26 +1840,19 @@ public class XWikiDocument implements DocumentModelBridge, Cloneable
 
     public String getAttachmentURL(String filename, String action, String querystring, XWikiContext context)
     {
-        URL url =
-            context.getURLFactory().createAttachmentURL(filename, getSpace(), getName(), action, querystring,
-                getDatabase(), context);
-        return context.getURLFactory().getURL(url, context);
+        return context.getWiki().getAttachmentURL(new AttachmentReference(filename, this.getDocumentReference()),
+            action, querystring, context);
     }
 
     public String getAttachmentRevisionURL(String filename, String revision, XWikiContext context)
     {
-        URL url =
-            context.getURLFactory().createAttachmentRevisionURL(filename, getSpace(), getName(), revision, null,
-                getDatabase(), context);
-        return context.getURLFactory().getURL(url, context);
+        return getAttachmentRevisionURL(filename, revision, null, context);
     }
 
     public String getAttachmentRevisionURL(String filename, String revision, String querystring, XWikiContext context)
     {
-        URL url =
-            context.getURLFactory().createAttachmentRevisionURL(filename, getSpace(), getName(), revision, querystring,
-                getDatabase(), context);
-        return context.getURLFactory().getURL(url, context);
+        return context.getWiki().getAttachmentRevisionURL(new AttachmentReference(filename, getDocumentReference()),
+            revision, querystring, context);
     }
 
     /**
@@ -3671,7 +3645,7 @@ public class XWikiDocument implements DocumentModelBridge, Cloneable
      * @param eform is form information that contains all the query parameters
      * @param context
      * @throws XWikiException
-     * @since 7.0RC1
+     * @since 7.1M1
      */
     public void readObjectsFromFormUpdateOrCreate(EditForm eform, XWikiContext context) throws XWikiException
     {

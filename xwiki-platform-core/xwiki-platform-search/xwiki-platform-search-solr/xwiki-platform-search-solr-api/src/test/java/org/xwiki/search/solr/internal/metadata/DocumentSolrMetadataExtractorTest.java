@@ -179,6 +179,10 @@ public class DocumentSolrMetadataExtractorTest
         when(localEntityReferenceSerializer.serialize(documentReference.getParent().getParent().getParent()))
             .thenReturn("Path");
 
+        String localSpaceReference = "Path.To.Page";
+        when(localEntityReferenceSerializer.serialize(this.documentReference.getLastSpaceReference())).thenReturn(
+            localSpaceReference);
+
         // Creator.
         DocumentReference creatorReference = new DocumentReference("wiki", "Space", "Creator");
         when(this.document.getCreatorReference()).thenReturn(creatorReference);

@@ -26,6 +26,7 @@ import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.URLEncoder;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -395,13 +396,28 @@ public class TestUtils
 
     public void gotoPage(String space, String page, String action, Map<String, ?> queryParameters)
     {
-        gotoPage(space, page, action, toQueryString(queryParameters));
+        gotoPage(Collections.singletonList(space), page, action, queryParameters);
+    }
+
+    /**
+     * @since 7.2M2
+     */
+    public void gotoPage(List<String> spaces, String page, String action, Map<String, ?> queryParameters)
+    {
+        gotoPage(spaces, page, action, toQueryString(queryParameters));
     }
 
     public void gotoPage(String space, String page, String action, String queryString)
     {
-        // Only navigate if the current URL is different from the one to go to, in order to improve performances.
-        gotoPage(getURL(space, page, action, queryString));
+        gotoPage(Collections.singletonList(space), page, action, queryString);
+    }
+
+    /**
+     * @since 7.2M2
+     */
+    public void gotoPage(List<String> spaces, String page, String action, String queryString)
+    {
+        gotoPage(getURL(spaces, page, action, queryString));
     }
 
     public void gotoPage(String url)
@@ -429,15 +445,40 @@ public class TestUtils
 
     public ViewPage createPage(String space, String page, String content, String title)
     {
-        return createPage(space, page, content, title, null);
+        return createPage(Collections.singletonList(space), page, content, title);
+    }
+
+    /**
+     * @since 7.2M2
+     */
+    public ViewPage createPage(List<String> spaces, String page, String content, String title)
+    {
+        return createPage(spaces, page, content, title, null);
     }
 
     public ViewPage createPage(String space, String page, String content, String title, String syntaxId)
     {
-        return createPage(space, page, content, title, syntaxId, null);
+        return createPage(Collections.singletonList(space), page, content, title, syntaxId);
+    }
+
+    /**
+     * @since 7.2M2
+     */
+    public ViewPage createPage(List<String> spaces, String page, String content, String title, String syntaxId)
+    {
+        return createPage(spaces, page, content, title, syntaxId, null);
     }
 
     public ViewPage createPage(String space, String page, String content, String title, String syntaxId,
+        String parentFullPageName)
+    {
+        return createPage(Collections.singletonList(space), page, content, title, syntaxId, parentFullPageName);
+    }
+
+    /**
+     * @since 7.2M2
+     */
+    public ViewPage createPage(List<String> spaces, String page, String content, String title, String syntaxId,
         String parentFullPageName)
     {
         Map<String, String> queryMap = new HashMap<String, String>();
@@ -453,7 +494,7 @@ public class TestUtils
         if (parentFullPageName != null) {
             queryMap.put("parent", parentFullPageName);
         }
-        gotoPage(space, page, "save", queryMap);
+        gotoPage(spaces, page, "save", queryMap);
         return new ViewPage();
     }
 
@@ -474,8 +515,19 @@ public class TestUtils
         String parentFullPageName, String attachmentName, InputStream attachmentData,
         UsernamePasswordCredentials credentials) throws Exception
     {
-        ViewPage vp = createPage(space, page, content, title, syntaxId, parentFullPageName);
-        attachFile(space, page, attachmentName, attachmentData, false, credentials);
+        return createPageWithAttachment(Collections.singletonList(space), page, content, title, syntaxId,
+            parentFullPageName, attachmentName, attachmentData, credentials);
+    }
+
+    /**
+     * @since 7.2M2
+     */
+    public ViewPage createPageWithAttachment(List<String> spaces, String page, String content, String title,
+        String syntaxId, String parentFullPageName, String attachmentName, InputStream attachmentData,
+        UsernamePasswordCredentials credentials) throws Exception
+    {
+        ViewPage vp = createPage(spaces, page, content, title, syntaxId, parentFullPageName);
+        attachFile(spaces, page, attachmentName, attachmentData, false, credentials);
         return vp;
     }
 
@@ -517,9 +569,17 @@ public class TestUtils
 
     public boolean pageExists(String space, String page)
     {
+        return pageExists(Collections.singletonList(space), page);
+    }
+
+    /**
+     * @since 7.2M2
+     */
+    public boolean pageExists(List<String> spaces, String page)
+    {
         boolean exists;
         try {
-            executeGet(getURL(space, page), Status.OK.getStatusCode());
+            executeGet(getURL(spaces, page, "view", null), Status.OK.getStatusCode());
             exists = true;
         } catch (Exception e) {
             exists = false;
@@ -561,17 +621,34 @@ public class TestUtils
      */
     public String getURL(String space, String page, String action, String queryString)
     {
-        return getURL(new String[] {space, page}, action, queryString);
+        return getURL(action, new String[]{ space, page }, queryString);
     }
 
-    private String getURL(String[] path, String action, String queryString)
+    /**
+     * @since 7.2M2
+     */
+    public String getURL(List<String> spaces, String page, String action, String queryString)
+    {
+        List<String> path = new ArrayList<>(spaces);
+        path.add(page);
+        return getURL(action, path.toArray(new String[] {}), queryString);
+    }
+
+    /**
+     * @since 7.2M1
+     */
+    public String getURL(String action, String[] path, String queryString)
     {
         StringBuilder builder = new StringBuilder(TestUtils.BASE_BIN_URL);
 
-        builder.append(action);
-        for (String element : path) {
-            builder.append('/').append(escapeURL(element));
+        if (!StringUtils.isEmpty(action)) {
+            builder.append(action).append('/');
         }
+        List<String> escapedPath = new ArrayList<>();
+        for (String element : path) {
+            escapedPath.add(escapeURL(element));
+        }
+        builder.append(StringUtils.join(escapedPath, '/'));
 
         boolean needToAddSecretToken = !Arrays.asList("view", "register", "download").contains(action);
         if (needToAddSecretToken || !StringUtils.isEmpty(queryString)) {
@@ -612,7 +689,7 @@ public class TestUtils
      */
     public String getAttachmentURL(String space, String page, String attachment, String action, String queryString)
     {
-        return getURL(new String[] {space, page, attachment}, action, queryString);
+        return getURL(action, new String[] {space, page, attachment}, queryString);
     }
 
     /**
@@ -1005,13 +1082,22 @@ public class TestUtils
     public void attachFile(String space, String page, String name, InputStream is, boolean failIfExists,
         UsernamePasswordCredentials credentials) throws Exception
     {
+        attachFile(Collections.singletonList(space), page, name, is, failIfExists, credentials);
+    }
+
+    /**
+     * @since 7.2M2
+     */
+    public void attachFile(List<String> spaces, String page, String name, InputStream is, boolean failIfExists,
+        UsernamePasswordCredentials credentials) throws Exception
+    {
         UsernamePasswordCredentials currentCredentials = getDefaultCredentials();
 
         try {
             if (credentials != null) {
                 setDefaultCredentials(credentials);
             }
-            attachFile(space, page, name, is, failIfExists);
+            attachFile(spaces, page, name, is, failIfExists);
         } finally {
             setDefaultCredentials(currentCredentials);
         }
@@ -1020,15 +1106,26 @@ public class TestUtils
     public void attachFile(String space, String page, String name, InputStream is, boolean failIfExists)
         throws Exception
     {
+        attachFile(Collections.singletonList(space), page, name, is, failIfExists);
+    }
+
+    /**
+     * @since 7.2M2
+     */
+    public void attachFile(List<String> spaces, String page, String name, InputStream is, boolean failIfExists)
+        throws Exception
+    {
         // make sure xwiki.Import exists
-        if (!pageExists(space, page)) {
-            createPage(space, page, null, null);
+        if (!pageExists(spaces, page)) {
+            createPage(spaces, page, null, null);
         }
 
         StringBuilder url = new StringBuilder(BASE_REST_URL);
 
-        url.append("wikis/xwiki/spaces/");
-        url.append(escapeURL(space));
+        url.append("wikis/xwiki");
+        for (String space : spaces) {
+            url.append("/spaces/").append(escapeURL(space));
+        }
         url.append("/pages/");
         url.append(escapeURL(page));
         url.append("/attachments/");
@@ -1265,5 +1362,33 @@ public class TestUtils
     public void rollBackTo(String space, String page, String version)
     {
         gotoPage(space, page, "rollback", "rev", version, "confirm", "1");
+    }
+
+    /**
+     * Set the hierarchy mode used in the wiki
+     * @param mode the mode to use ("reference" or "parentchild")
+     * @since 7.2M2
+     */
+    public void setHierarchyMode(String mode) {
+        setPropertyInXWikiPreferences("core.hierarchyMode", "String", mode);
+    }
+
+    /**
+     * Add and set a property into XWiki.XWikiPreferences. Create XWiki.XWikiPreferences if it does not exist.  
+     * @param propertyName name of the property to set
+     * @param propertyType the type of the property to add
+     * @param value value to set to the property
+     * @since 7.2M2 
+     */
+    public void setPropertyInXWikiPreferences(String propertyName, String propertyType, Object value)
+    {
+        addClassProperty("XWiki", "XWikiPreferences", propertyName, propertyType);
+        gotoPage("XWiki", "XWikiPreferences", "edit", "editor", "object");
+        ObjectEditPage objectEditPage = new ObjectEditPage();
+        if (objectEditPage.hasObject("XWiki.XWikiPreferences")) {
+            updateObject("XWiki", "XWikiPreferences", "XWiki.XWikiPreferences", 0, propertyName, value);
+        } else {
+            addObject("XWiki", "XWikiPreferences", "XWiki.XWikiPreferences", propertyName, value);
+        }
     }
 }

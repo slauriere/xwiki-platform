@@ -40,52 +40,13 @@ import org.xwiki.model.EntityType;
  */
 public class EntityReferenceSet
 {
-    private static class EntityReferenceEntry
+    private static class EntityReferenceEntryChildren
     {
-        public EntityType type;
-
-        public String name;
-
-        public List<Map<String, Serializable>> parameters;
-
         public EntityType childrenType;
 
         public Map<String, EntityReferenceEntry> children;
 
-        public EntityReferenceEntry()
-        {
-        }
-
-        public EntityReferenceEntry(EntityType type, String name)
-        {
-            this.type = type;
-            this.name = name;
-        }
-
-        public EntityReferenceEntry(EntityReferenceEntry entry)
-        {
-            this(entry.type, entry.name);
-
-            this.childrenType = entry.childrenType;
-            this.children = entry.children;
-            this.parameters = entry.parameters;
-        }
-
-        public EntityReferenceEntry add()
-        {
-            return add(null, null, null);
-        }
-
-        public void add(EntityReferenceEntry entry)
-        {
-            if (this.children == null) {
-                this.children = new HashMap<String, EntityReferenceEntry>();
-            }
-
-            this.children.put(entry.name, entry);
-        }
-
-        public EntityReferenceEntry add(EntityType entityType, String name, Map<String, Serializable> entityParameters)
+        public EntityReferenceEntry add(String name, Map<String, Serializable> entityParameters)
         {
             if (this.children == null) {
                 this.children = new HashMap<String, EntityReferenceEntry>();
@@ -94,7 +55,7 @@ public class EntityReferenceSet
             EntityReferenceEntry entry = this.children.get(name);
 
             if (entry == null) {
-                entry = new EntityReferenceEntry(entityType, name);
+                entry = new EntityReferenceEntry(this.childrenType, name);
 
                 if (entityParameters != null) {
                     entry.addParameters(entityParameters);
@@ -110,6 +71,106 @@ public class EntityReferenceSet
             return entry;
         }
 
+        @Override
+        public String toString()
+        {
+            StringBuilder builder = new StringBuilder();
+
+            builder.append(this.childrenType);
+            builder.append('(');
+            builder.append(this.children);
+
+            return builder.toString();
+        }
+    }
+
+    private static class EntityReferenceEntry
+    {
+        public EntityType type;
+
+        public String name;
+
+        public List<Map<String, Serializable>> parameters;
+
+        public Map<EntityType, EntityReferenceEntryChildren> children;
+
+        public EntityReferenceEntry()
+        {
+        }
+
+        public EntityReferenceEntry(EntityType type, String name)
+        {
+            this.type = type;
+            this.name = name;
+        }
+
+        public EntityReferenceEntry add()
+        {
+            return add(null, null, null);
+        }
+
+        public EntityReferenceEntryChildren getChildren(EntityType entityType, boolean create)
+        {
+            if (this.children == null) {
+                if (!create) {
+                    return null;
+                }
+
+                this.children = new HashMap<>();
+            }
+
+            EntityReferenceEntryChildren child = this.children.get(entityType);
+
+            if (child == null) {
+                if (!create) {
+                    return null;
+                }
+
+                child = new EntityReferenceEntryChildren();
+                child.childrenType = entityType;
+                this.children.put(entityType, child);
+            }
+
+            return child;
+        }
+
+        public EntityReferenceEntryChildren getClosestChildren(EntityType entityType)
+        {
+            EntityReferenceEntryChildren typedChildren = getChildren(entityType, false);
+
+            if (typedChildren != null) {
+                return typedChildren;
+            }
+
+            // Search for the closest
+
+            if (this.children == null) {
+                return null;
+            }
+
+            for (Map.Entry<EntityType, EntityReferenceEntryChildren> entry : this.children.entrySet()) {
+                EntityReferenceEntryChildren typedChilrendEntry = entry.getValue();
+
+                if (typedChilrendEntry.childrenType.ordinal() > entityType.ordinal()) {
+                    // Only return a potential child of the passed type
+                    if (typedChildren == null
+                        || typedChildren.childrenType.ordinal() > typedChilrendEntry.childrenType.ordinal()) {
+                        typedChildren = typedChilrendEntry;
+                    }
+                }
+            }
+
+            return typedChildren;
+        }
+
+        public EntityReferenceEntry add(EntityType entityType, String entityName,
+            Map<String, Serializable> entityParameters)
+        {
+            EntityReferenceEntryChildren child = getChildren(entityType, true);
+
+            return child.add(entityName, entityParameters);
+        }
+
         private void addParameters(Map<String, Serializable> entityParameters)
         {
             if (!entityParameters.isEmpty()) {
@@ -119,12 +180,6 @@ public class EntityReferenceSet
 
                 this.parameters.add(entityParameters);
             }
-        }
-
-        public void reset()
-        {
-            this.childrenType = null;
-            this.children = null;
         }
 
         public boolean matches(EntityReference reference)
@@ -159,6 +214,26 @@ public class EntityReferenceSet
 
             return true;
         }
+
+        @Override
+        public String toString()
+        {
+            StringBuilder builder = new StringBuilder();
+
+            if (this.type != null) {
+                builder.append(this.type);
+                builder.append(':');
+                builder.append(this.name);
+            }
+
+            if (this.children != null) {
+                builder.append('(');
+                builder.append(this.children);
+                builder.append(')');
+            }
+
+            return builder.toString();
+        }
     }
 
     private EntityReferenceEntry includes;
@@ -168,20 +243,16 @@ public class EntityReferenceSet
     private void add(EntityReference reference, EntityReferenceEntry entry)
     {
         EntityReferenceEntry currentEntry = entry;
+
         for (EntityReference element : reference.getReversedReferenceChain()) {
-            // Move to the right level in the tree
-            while (currentEntry.childrenType != null && currentEntry.childrenType.compareTo(element.getType()) < 0) {
-                currentEntry = currentEntry.add();
+            // Move the first element to the right level in the tree
+            if (currentEntry == entry) {
+                while (currentEntry.children != null && currentEntry.getClosestChildren(element.getType()) == null) {
+                    currentEntry = currentEntry.add();
+                }
             }
 
-            if (currentEntry.childrenType == null || currentEntry.childrenType == element.getType()) {
-                currentEntry.childrenType = element.getType();
-                currentEntry = currentEntry.add(element.getType(), element.getName(), element.getParameters());
-            } else {
-                EntityReferenceEntry newEntry = new EntityReferenceEntry(currentEntry);
-                currentEntry.reset();
-                currentEntry.add(newEntry);
-            }
+            currentEntry = currentEntry.add(element.getType(), element.getName(), element.getParameters());
         }
     }
 
@@ -228,12 +299,14 @@ public class EntityReferenceSet
                 return true;
             }
 
-            // Children have same type
-            if (currentEntry.childrenType == element.getType()) {
-                EntityReferenceEntry nameEntry = currentEntry.children.get(element.getName());
+            EntityReferenceEntryChildren typedChildren = currentEntry.children.get(element.getType());
+
+            if (typedChildren != null) {
+                // Children have same type
+                EntityReferenceEntry nameEntry = typedChildren.children.get(element.getName());
 
                 if (nameEntry == null) {
-                    currentEntry = currentEntry.children.get(null);
+                    currentEntry = typedChildren.children.get(null);
 
                     if (currentEntry == null) {
                         return false;
@@ -243,6 +316,10 @@ public class EntityReferenceSet
                 }
 
                 if (!currentEntry.matches(element)) {
+                    return false;
+                }
+            } else {
+                if (currentEntry.name != null || currentEntry.getClosestChildren(element.getType()) == null) {
                     return false;
                 }
             }
@@ -264,12 +341,14 @@ public class EntityReferenceSet
                 return false;
             }
 
-            // Children have same type
-            if (currentEntry.childrenType == element.getType()) {
-                EntityReferenceEntry nameEntry = currentEntry.children.get(element.getName());
+            EntityReferenceEntryChildren typedChildren = currentEntry.children.get(element.getType());
+
+            if (typedChildren != null) {
+                // Children have same type
+                EntityReferenceEntry nameEntry = typedChildren.children.get(element.getName());
 
                 if (nameEntry == null) {
-                    currentEntry = currentEntry.children.get(null);
+                    currentEntry = typedChildren.children.get(null);
 
                     if (currentEntry == null) {
                         return true;

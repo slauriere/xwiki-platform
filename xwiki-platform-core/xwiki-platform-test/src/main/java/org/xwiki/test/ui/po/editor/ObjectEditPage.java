@@ -31,7 +31,7 @@ import org.xwiki.test.ui.po.FormElement;
 
 /**
  * Represents the common actions possible on all Pages when using the "edit" action with the "object" editor.
- * 
+ *
  * @version $Id$
  * @since 3.2M3
  */
@@ -193,5 +193,9 @@ public class ObjectEditPage extends EditPage
             objects.add(new ObjectEditPane(element, className, objectNumber));
         }
         return objects;
+    }
+
+    public boolean hasObject(String className) {
+        return !getDriver().findElementsWithoutWaiting(By.id("xclass_" + className)).isEmpty();
     }
 }

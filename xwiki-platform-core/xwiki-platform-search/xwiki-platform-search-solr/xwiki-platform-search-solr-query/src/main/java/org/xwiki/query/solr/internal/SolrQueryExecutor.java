@@ -43,6 +43,7 @@ import org.xwiki.model.reference.DocumentReferenceResolver;
 import org.xwiki.query.Query;
 import org.xwiki.query.QueryException;
 import org.xwiki.query.QueryExecutor;
+import org.xwiki.query.SecureQuery;
 import org.xwiki.search.solr.internal.api.SolrInstance;
 
 import com.xpn.xwiki.XWikiContext;
@@ -105,6 +106,12 @@ public class SolrQueryExecutor implements QueryExecutor
     @Override
     public <T> List<T> execute(Query query) throws QueryException
     {
+        // TODO: make it less restrictive, see http://jira.xwiki.org/browse/XWIKI-9386
+        if (query instanceof SecureQuery && ((SecureQuery) query).isCurrentAuthorChecked()
+            && !this.documentAccessBridge.hasProgrammingRights()) {
+            throw new QueryException("Solr query require programming right", query, null);
+        }
+
         try {
             SolrInstance solrInstance = solrInstanceProvider.get();
             SolrQuery solrQuery = createSolrQuery(query);
@@ -117,7 +124,9 @@ public class SolrQueryExecutor implements QueryExecutor
             // A better way would be using a PostFilter as described in this article:
             // http://java.dzone.com/articles/custom-security-filtering-solr
             // Basically, we would be asking
-            this.filterResponse(response);
+            if (!(query instanceof SecureQuery) || ((SecureQuery) query).isCurrentUserChecked()) {
+                this.filterResponse(response);
+            }
 
             return (List<T>) Arrays.asList(response);
         } catch (Exception e) {

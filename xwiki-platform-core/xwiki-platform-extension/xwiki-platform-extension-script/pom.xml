@@ -32,13 +32,18 @@
   <packaging>jar</packaging>
   <description>XWiki Platform - Extension - Script</description>
   <properties>
-    <xwiki.jacoco.instructionRatio>0.21</xwiki.jacoco.instructionRatio>
+    <xwiki.jacoco.instructionRatio>0.25</xwiki.jacoco.instructionRatio>
   </properties>
   <dependencies>
     <dependency>
       <groupId>org.xwiki.commons</groupId>
       <artifactId>xwiki-commons-extension-api</artifactId>
       <version>${commons.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.xwiki.platform</groupId>
+      <artifactId>xwiki-platform-job-script</artifactId>
+      <version>${project.version}</version>
     </dependency>
     <!-- Scripting -->
     <dependency>

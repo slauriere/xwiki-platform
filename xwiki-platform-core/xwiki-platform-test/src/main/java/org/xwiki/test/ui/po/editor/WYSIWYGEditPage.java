@@ -20,8 +20,6 @@
 package org.xwiki.test.ui.po.editor;
 
 import org.openqa.selenium.By;
-import org.openqa.selenium.WebElement;
-import org.openqa.selenium.support.FindBy;
 import org.xwiki.test.ui.po.BaseElement;
 import org.xwiki.test.ui.po.InlinePage;
 import org.xwiki.test.ui.po.editor.wysiwyg.EditorElement;
@@ -35,12 +33,6 @@ import org.xwiki.test.ui.po.editor.wysiwyg.RichTextAreaElement;
  */
 public class WYSIWYGEditPage extends PreviewableEditPage
 {
-    @FindBy(id = "xwikidoctitleinput")
-    private WebElement titleField;
-
-    @FindBy(name = "parent")
-    private WebElement parentInput;
-
     /**
      * The WYSIWYG content editor.
      */
@@ -53,12 +45,6 @@ public class WYSIWYGEditPage extends PreviewableEditPage
     {
         BaseElement.getUtil().gotoPage(space, page, "edit", "editor=wysiwyg");
         return new WYSIWYGEditPage();
-    }
-
-    @Override
-    public String getDocumentTitle()
-    {
-        return this.titleField.getAttribute("value");
     }
 
     /**
@@ -88,14 +74,6 @@ public class WYSIWYGEditPage extends PreviewableEditPage
         RichTextAreaElement textArea = editor.getRichTextArea();
         textArea.clear();
         textArea.sendKeys(content);
-    }
-
-    /**
-     * @return the value of the parent field.
-     */
-    public String getParent()
-    {
-        return this.parentInput.getAttribute("value");
     }
 
     @Override

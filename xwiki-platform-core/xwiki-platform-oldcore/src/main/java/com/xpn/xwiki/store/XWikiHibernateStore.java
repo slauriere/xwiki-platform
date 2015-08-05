@@ -83,6 +83,7 @@ import com.xpn.xwiki.doc.XWikiDocument;
 import com.xpn.xwiki.doc.XWikiDocument.XWikiAttachmentToRemove;
 import com.xpn.xwiki.doc.XWikiLink;
 import com.xpn.xwiki.doc.XWikiLock;
+import com.xpn.xwiki.doc.XWikiSpace;
 import com.xpn.xwiki.internal.render.OldRendering;
 import com.xpn.xwiki.monitor.api.MonitorPlugin;
 import com.xpn.xwiki.objects.BaseCollection;
@@ -133,6 +134,9 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
     @Inject
     @Named("currentmixed")
     private DocumentReferenceResolver<String> currentMixedDocumentReferenceResolver;
+
+    @Inject
+    private DocumentReferenceResolver<String> defaultDocumentReferenceResolver;
 
     /**
      * Used to convert a proper Document Reference to string (standard form).
@@ -300,8 +304,7 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
                 stmt.execute("create user " + escapedSchema + " identified by " + escapedSchema);
                 stmt.execute("grant resource to " + escapedSchema);
             } else if (DatabaseProduct.DERBY == databaseProduct || DatabaseProduct.DB2 == databaseProduct
-                || DatabaseProduct.H2 == databaseProduct)
-            {
+                || DatabaseProduct.H2 == databaseProduct) {
                 stmt.execute("CREATE SCHEMA " + escapedSchema);
             } else if (DatabaseProduct.HSQLDB == databaseProduct) {
                 stmt.execute("CREATE SCHEMA " + escapedSchema + " AUTHORIZATION DBA");
@@ -400,8 +403,7 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
         if (DatabaseProduct.ORACLE == databaseProduct) {
             statement.execute("DROP USER " + escapedSchemaName + " CASCADE");
         } else if (DatabaseProduct.DERBY == databaseProduct || DatabaseProduct.MYSQL == databaseProduct
-            || DatabaseProduct.H2 == databaseProduct)
-        {
+            || DatabaseProduct.H2 == databaseProduct) {
             statement.execute("DROP SCHEMA " + escapedSchemaName);
         } else if (DatabaseProduct.HSQLDB == databaseProduct) {
             statement.execute("DROP SCHEMA " + escapedSchemaName + " CASCADE");
@@ -639,6 +641,9 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
                 }
             }
 
+            // Update space table
+            updateXWikiSpaceTable(doc, session);
+
             if (bTransaction) {
                 endTransaction(context, true);
             }
@@ -647,7 +652,6 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
 
             // We need to ensure that the saved document becomes the original document
             doc.setOriginalDocument(doc.clone());
-
         } catch (Exception e) {
             Object[] args = { this.defaultEntityReferenceSerializer.serialize(doc.getDocumentReference()) };
             throw new XWikiException(XWikiException.MODULE_XWIKI_STORE,
@@ -665,6 +669,144 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
                 monitor.endTimer("hibernate");
             }
         }
+    }
+
+    private void updateXWikiSpaceTable(XWikiDocument document, Session session)
+    {
+        if (!document.isNew()) {
+            // If the hidden state of an existing document did not changed there is nothing to do
+            if (document.isHidden() != document.getOriginalDocument().isHidden()) {
+                if (document.isHidden()) {
+                    // If the document became hidden it's possible the space did too
+                    maybeMakeSpaceHidden(document.getDocumentReference().getLastSpaceReference(),
+                        document.getFullName(), session);
+                } else {
+                    // If the document became visible then all its parents should be visible as well
+                    makeSpaceVisible(document.getDocumentReference().getLastSpaceReference(), session);
+                }
+            }
+        } else {
+            // It's possible the space of a new document does not yet exist
+            maybeCreateSpace(document.getDocumentReference().getLastSpaceReference(), document.isHidden(),
+                document.getFullName(), session);
+        }
+    }
+
+    private void insertXWikiSpace(XWikiSpace space, String newDocument, Session session)
+    {
+        // Insert the space
+        session.save(space);
+
+        // Update parent space
+        if (space.getSpaceReference().getParent() instanceof SpaceReference) {
+            maybeCreateSpace((SpaceReference) space.getSpaceReference().getParent(), space.isHidden(), newDocument,
+                session);
+        }
+    }
+
+    private void makeSpaceVisible(SpaceReference spaceReference, Session session)
+    {
+        XWikiSpace space = loadXWikiSpace(spaceReference, session);
+
+        makeSpaceVisible(space, session);
+    }
+
+    private void makeSpaceVisible(XWikiSpace space, Session session)
+    {
+        if (space.isHidden()) {
+            space.setHidden(false);
+
+            session.update(space);
+
+            // Update parent
+            if (space.getSpaceReference().getParent() instanceof SpaceReference) {
+                makeSpaceVisible((SpaceReference) space.getSpaceReference().getParent(), session);
+            }
+        }
+    }
+
+    private void maybeMakeSpaceHidden(SpaceReference spaceReference, String modifiedDocument, Session session)
+    {
+        XWikiSpace space = loadXWikiSpace(spaceReference, session);
+
+        // If the space is already hidden return
+        if (space.isHidden()) {
+            return;
+        }
+
+        if (calculateHiddenStatus(spaceReference, modifiedDocument, session)) {
+            // Make the space hidden
+            space.setHidden(true);
+            session.update(space);
+
+            // Update space parent
+            if (spaceReference.getParent() instanceof SpaceReference) {
+                maybeMakeSpaceHidden((SpaceReference) spaceReference.getParent(), modifiedDocument, session);
+            }
+        }
+    }
+
+    private void maybeCreateSpace(SpaceReference spaceReference, boolean hidden, String newDocument, Session session)
+    {
+        XWikiSpace space = loadXWikiSpace(spaceReference, session);
+
+        if (space != null) {
+            if (space.isHidden() && !hidden) {
+                makeSpaceVisible(space, session);
+            }
+        } else {
+            insertXWikiSpace(new XWikiSpace(spaceReference, hidden), newDocument, session);
+        }
+    }
+
+    private long countAllDocuments(SpaceReference spaceReference, Session session, String extraWhere,
+        Object... extraParameters)
+    {
+        StringBuilder builder =
+            new StringBuilder("select count(*) from XWikiDocument as xwikidoc where (space = ? OR space LIKE ?)");
+
+        if (StringUtils.isNotEmpty(extraWhere)) {
+            builder.append(" AND ");
+            builder.append('(');
+            builder.append(extraWhere);
+            builder.append(')');
+        }
+
+        Query query = session.createQuery(builder.toString());
+
+        String localSpaceReference = this.localEntityReferenceSerializer.serialize(spaceReference);
+
+        int index = 0;
+
+        query.setString(index++, localSpaceReference);
+        query.setString(index++, localSpaceReference + ".%");
+
+        if (extraParameters != null) {
+            for (Object parameter : extraParameters) {
+                query.setParameter(index++, parameter);
+            }
+        }
+
+        return (Long) query.uniqueResult();
+    }
+
+    /**
+     * Find hidden status of a space from its children.
+     */
+    private boolean calculateHiddenStatus(SpaceReference spaceReference, String documentToIngore, Session session)
+    {
+        // If there is at least one visible document then the space is visible
+        StringBuilder builder = new StringBuilder("(hidden = false OR hidden IS NULL)");
+
+        Object[] parameters;
+        if (documentToIngore != null) {
+            builder.append(" AND fullName <> ?");
+            parameters = new Object[] { documentToIngore };
+        } else {
+            parameters = null;
+        }
+
+        return !(countAllDocuments(spaceReference, session, builder.toString(), parameters) > 0);
     }
 
     private boolean containsVersion(XWikiDocument doc, Version targetversion, XWikiContext context)
@@ -742,16 +884,19 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
             context.addBaseClass(bclass);
 
             if (doc.hasElement(XWikiDocument.HAS_OBJECTS)) {
-                Query query = session.createQuery("from BaseObject as bobject where bobject.name = :name order by "
-                    + "bobject.number");
+                Query query =
+                    session.createQuery("from BaseObject as bobject where bobject.name = :name order by "
+                        + "bobject.number");
                 query.setText("name", doc.getFullName());
                 @SuppressWarnings("unchecked")
                 Iterator<BaseObject> it = query.list().iterator();
 
-                EntityReference localGroupEntityReference = new EntityReference("XWikiGroups", EntityType.DOCUMENT,
-                    new EntityReference("XWiki", EntityType.SPACE));
-                DocumentReference groupsDocumentReference = new DocumentReference(context.getWikiId(),
-                    localGroupEntityReference.getParent().getName(), localGroupEntityReference.getName());
+                EntityReference localGroupEntityReference =
+                    new EntityReference("XWikiGroups", EntityType.DOCUMENT, new EntityReference("XWiki",
+                        EntityType.SPACE));
+                DocumentReference groupsDocumentReference =
+                    new DocumentReference(context.getWikiId(), localGroupEntityReference.getParent().getName(),
+                        localGroupEntityReference.getName());
 
                 boolean hasGroups = false;
                 while (it.hasNext()) {
@@ -797,9 +942,11 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
                 // as each group object (each group member) would otherwise cost 2 database queries.
                 // This will do every group member in a single query.
                 if (hasGroups) {
-                    Query query2 = session.createQuery("select bobject.number, prop.value from StringProperty as prop,"
-                        + "BaseObject as bobject where bobject.name = :name and bobject.className='XWiki.XWikiGroups' "
-                        + "and bobject.id=prop.id.id and prop.id.name='member' order by bobject.number");
+                    Query query2 =
+                        session
+                            .createQuery("select bobject.number, prop.value from StringProperty as prop,"
+                                + "BaseObject as bobject where bobject.name = :name and bobject.className='XWiki.XWikiGroups' "
+                                + "and bobject.id=prop.id.id and prop.id.name='member' order by bobject.number");
                     query2.setText("name", doc.getFullName());
                     @SuppressWarnings("unchecked")
                     Iterator<Object[]> it2 = query2.list().iterator();
@@ -907,6 +1054,9 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
             // We need to ensure that the deleted document becomes the original document
             doc.setOriginalDocument(doc.clone());
 
+            // Update space table if needed
+            maybeDeleteXWikiSpace(doc.getDocumentReference(), session);
+
             if (bTransaction) {
                 endTransaction(context, true);
             }
@@ -930,6 +1080,44 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
         }
     }
 
+    private void maybeDeleteXWikiSpace(DocumentReference deletedDocument, Session session)
+    {
+        maybeDeleteXWikiSpace(deletedDocument.getLastSpaceReference(),
+            this.localEntityReferenceSerializer.serialize(deletedDocument), session);
+    }
+
+    private void maybeDeleteXWikiSpace(SpaceReference spaceReference, String deletedDocument, Session session)
+    {
+        if (countAllDocuments(spaceReference, session, "fullName <> ?", deletedDocument) == 0) {
+            // The document was the last document in the space
+            XWikiSpace space = new XWikiSpace(spaceReference, this);
+
+            session.delete(space);
+
+            // Update parent
+            if (spaceReference.getParent() instanceof SpaceReference) {
+                maybeDeleteXWikiSpace((SpaceReference) spaceReference.getParent(), deletedDocument, session);
+            }
+        } else {
+            // Update space hidden property if needed
+            maybeMakeSpaceHidden(spaceReference, deletedDocument, session);
+        }
+    }
+
+    private XWikiSpace loadXWikiSpace(SpaceReference spaceReference, Session session)
+    {
+        XWikiSpace space = new XWikiSpace(spaceReference, this);
+
+        try {
+            session.load(space, new Long(space.getId()));
+        } catch (ObjectNotFoundException e) {
+            // No space
+            return null;
+        }
+
+        return space;
+    }
+
     private void checkObjectClassIsLocal(BaseCollection object, XWikiContext context) throws XWikiException
     {
         DocumentReference xclass = object.getXClassReference();
@@ -938,8 +1126,8 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
         if (!wikiReference.getName().equals(db)) {
             throw new XWikiException(XWikiException.MODULE_XWIKI_STORE,
                 XWikiException.ERROR_XWIKI_STORE_HIBERNATE_SAVING_OBJECT,
-                "XObject [{0}] is an instance of an external XClass and cannot be persisted in this wiki [{1}].",
-                null, new Object[] { this.localEntityReferenceSerializer.serialize(object.getReference()), db });
+                "XObject [{0}] is an instance of an external XClass and cannot be persisted in this wiki [{1}].", null,
+                new Object[] { this.localEntityReferenceSerializer.serialize(object.getReference()), db });
         }
     }
 
@@ -969,8 +1157,9 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
             // Verify if the property already exists
             Query query;
             if (stats) {
-                query = session.createQuery("select obj.id from " + object.getClass().getName()
-                    + " as obj where obj.id = :id");
+                query =
+                    session.createQuery("select obj.id from " + object.getClass().getName()
+                        + " as obj where obj.id = :id");
             } else {
                 query = session.createQuery("select obj.id from BaseObject as obj where obj.id = :id");
             }
@@ -1133,8 +1322,9 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
 
                 // Load strings, integers, dates all at once
 
-                Query query = session.createQuery(
-                    "select prop.name, prop.classType from BaseProperty as prop where prop.id.id = :id");
+                Query query =
+                    session
+                        .createQuery("select prop.name, prop.classType from BaseProperty as prop where prop.id.id = :id");
                 query.setLong("id", object.getId());
                 for (Object[] result : (List<Object[]>) query.list()) {
                     String name = (String) result[0];
@@ -1354,8 +1544,8 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
         }
     }
 
-    private void saveXWikiPropertyInternal(final PropertyInterface property,
-        final XWikiContext context, final boolean runInOwnTransaction) throws XWikiException
+    private void saveXWikiPropertyInternal(final PropertyInterface property, final XWikiContext context,
+        final boolean runInOwnTransaction) throws XWikiException
     {
         // Clone runInOwnTransaction so the value passed is not altered.
         boolean bTransaction = runInOwnTransaction;
@@ -1367,8 +1557,9 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
 
             final Session session = this.getSession(context);
 
-            Query query = session.createQuery("select prop.classType from BaseProperty as prop "
-                + "where prop.id.id = :id and prop.id.name= :name");
+            Query query =
+                session.createQuery("select prop.classType from BaseProperty as prop "
+                    + "where prop.id.id = :id and prop.id.name= :name");
             query.setLong("id", property.getId());
             query.setString("name", property.getName());
 
@@ -1385,8 +1576,9 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
                 // property from the table that corresponds to the old property type (we cannot delete and save the new
                 // property or delete a clone of the new property; loading the old property from the BaseProperty table
                 // doesn't work either).
-                query = session.createQuery("select prop from " + oldClassType
-                    + " as prop where prop.id.id = :id and prop.id.name= :name");
+                query =
+                    session.createQuery("select prop from " + oldClassType
+                        + " as prop where prop.id.id = :id and prop.id.name= :name");
                 query.setLong("id", property.getId());
                 query.setString("name", property.getName());
                 session.delete(query.uniqueResult());
@@ -1711,8 +1903,7 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
         try {
             this.beginTransaction(ctx);
             Session session = this.getSession(ctx);
-            final Query query =
-                session.createQuery("delete from XWikiLock as lock where lock.userName=:userName");
+            final Query query = session.createQuery("delete from XWikiLock as lock where lock.userName=:userName");
             // Using deprecated getUser() because this is how locks are created.
             // It would be a maintainibility disaster to use different code paths
             // for calculating names when creating and removing.
@@ -1731,9 +1922,7 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
 
         // If we're in a non-main wiki & the user is global,
         // switch to the global wiki and delete locks held there.
-        if (!ctx.isMainWiki()
-            && ctx.isMainWiki(ctx.getUserReference().getWikiReference().getName()))
-        {
+        if (!ctx.isMainWiki() && ctx.isMainWiki(ctx.getUserReference().getWikiReference().getName())) {
             final String cdb = ctx.getWikiId();
             try {
                 ctx.setWikiId(ctx.getMainXWiki());
@@ -1802,8 +1991,9 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
             Session session = getSession(context);
 
             // the select clause is compulsory to reach the fullName i.e. the page pointed
-            Query query = session.createQuery(
-                "select backlink.fullName from XWikiLink as backlink where backlink.id.link = :backlink");
+            Query query =
+                session
+                    .createQuery("select backlink.fullName from XWikiLink as backlink where backlink.id.link = :backlink");
             query.setString("backlink", this.localEntityReferenceSerializer.serialize(documentReference));
 
             @SuppressWarnings("unchecked")
@@ -1927,8 +2117,9 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
             bTransaction = beginTransaction(false, context);
             Session session = getSession(context);
 
-            Query query = session.createQuery("select doc.fullName from XWikiDocument as doc "
-                + "where (doc.xWikiClassXML is not null and doc.xWikiClassXML like '<%')");
+            Query query =
+                session.createQuery("select doc.fullName from XWikiDocument as doc "
+                    + "where (doc.xWikiClassXML is not null and doc.xWikiClassXML like '<%')");
             List<String> list = new ArrayList<String>();
             list.addAll(query.list());
 
@@ -1990,8 +2181,8 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
     }
 
     @Override
-    public List<String> searchDocumentsNames(String parametrizedSqlClause, List<?> parameterValues,
-        XWikiContext context) throws XWikiException
+    public List<String> searchDocumentsNames(String parametrizedSqlClause, List<?> parameterValues, XWikiContext context)
+        throws XWikiException
     {
         return searchDocumentsNames(parametrizedSqlClause, 0, 0, parameterValues, context);
     }
@@ -2000,15 +2191,15 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
     public List<DocumentReference> searchDocumentReferences(String parametrizedSqlClause, int nb, int start,
         List<?> parameterValues, XWikiContext context) throws XWikiException
     {
-        String sql = createSQLQuery("select distinct doc.space, doc.name", parametrizedSqlClause);
+        String sql = createSQLQuery("select distinct doc.fullName", parametrizedSqlClause);
         return searchDocumentReferencesInternal(sql, nb, start, parameterValues, context);
     }
 
     @Override
-    public List<String> searchDocumentsNames(String parametrizedSqlClause, int nb, int start,
-        List<?> parameterValues, XWikiContext context) throws XWikiException
+    public List<String> searchDocumentsNames(String parametrizedSqlClause, int nb, int start, List<?> parameterValues,
+        XWikiContext context) throws XWikiException
     {
-        String sql = createSQLQuery("select distinct doc.space, doc.name", parametrizedSqlClause);
+        String sql = createSQLQuery("select distinct doc.fullName", parametrizedSqlClause);
         return searchDocumentsNamesInternal(sql, nb, start, parameterValues, context);
     }
 
@@ -2043,7 +2234,7 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
     public List<DocumentReference> searchDocumentReferences(String wheresql, int nb, int start, String selectColumns,
         XWikiContext context) throws XWikiException
     {
-        String sql = createSQLQuery("select distinct doc.space, doc.name", wheresql);
+        String sql = createSQLQuery("select distinct doc.fullName", wheresql);
         return searchDocumentReferencesInternal(sql, nb, start, Collections.EMPTY_LIST, context);
     }
 
@@ -2051,7 +2242,7 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
     public List<String> searchDocumentsNames(String wheresql, int nb, int start, String selectColumns,
         XWikiContext context) throws XWikiException
     {
-        String sql = createSQLQuery("select distinct doc.space, doc.name", wheresql);
+        String sql = createSQLQuery("select distinct doc.fullName", wheresql);
         return searchDocumentsNamesInternal(sql, nb, start, Collections.EMPTY_LIST, context);
     }
 
@@ -2259,20 +2450,23 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
         List<?> parameterValues, XWikiContext context) throws XWikiException
     {
         List<DocumentReference> documentReferences = new ArrayList<DocumentReference>();
-        for (Object[] result : searchGenericInternal(sql, nb, start, parameterValues, context)) {
-            // Construct a reference, using the current wiki as the wiki reference name. This is because the wiki
-            // name is not stored in the database for document references.
-            DocumentReference reference = new DocumentReference((String) result[1],
-                new SpaceReference((String) result[0], new WikiReference(context.getWikiId())));
+
+        // Construct a reference, using the current wiki as the wiki reference name. This is because the wiki
+        // name is not stored in the database for document references.
+        WikiReference wikiReference = new WikiReference(context.getWikiId());
+        for (String referenceString : this.<String>searchGenericInternal(sql, nb, start, parameterValues, context)) {
+            DocumentReference reference = this.defaultDocumentReferenceResolver.resolve(referenceString, wikiReference);
+
             documentReferences.add(reference);
         }
+
         return documentReferences;
     }
 
     /**
      * @since 2.2M1
      */
-    private List<Object[]> searchGenericInternal(String sql, int nb, int start, List<?> parameterValues,
+    private <T> List<T> searchGenericInternal(String sql, int nb, int start, List<?> parameterValues,
         XWikiContext context) throws XWikiException
     {
         boolean bTransaction = false;
@@ -2297,9 +2491,9 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
                 query.setMaxResults(nb);
             }
             Iterator it = query.list().iterator();
-            List<Object[]> list = new ArrayList<Object[]>();
+            List list = new ArrayList<>();
             while (it.hasNext()) {
-                list.add((Object[]) it.next());
+                list.add(it.next());
             }
             return list;
         } catch (Exception e) {
@@ -2570,8 +2764,9 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
         }
 
         List<XWikiDocument> list;
-        list = searchDocuments(" where (doc.xWikiClassXML is not null and doc.xWikiClassXML like '<%')", true, false,
-            false, 0, 0, context);
+        list =
+            searchDocuments(" where (doc.xWikiClassXML is not null and doc.xWikiClassXML like '<%')", true, false,
+                false, 0, 0, context);
         boolean result = false;
 
         for (XWikiDocument doc : list) {
@@ -2790,8 +2985,9 @@ public class XWikiHibernateStore extends XWikiHibernateBaseStore implements XWik
     public List<String> getTranslationList(XWikiDocument doc, XWikiContext context) throws XWikiException
     {
         // Note that the query is made to work with Oracle which treats empty strings as null.
-        String hql = "select doc.language from XWikiDocument as doc where doc.space = ? and doc.name = ? "
-            + "and (doc.language <> '' or (doc.language is not null and '' is null))";
+        String hql =
+            "select doc.language from XWikiDocument as doc where doc.space = ? and doc.name = ? "
+                + "and (doc.language <> '' or (doc.language is not null and '' is null))";
         ArrayList<String> params = new ArrayList<String>();
         params.add(doc.getSpace());
         params.add(doc.getName());

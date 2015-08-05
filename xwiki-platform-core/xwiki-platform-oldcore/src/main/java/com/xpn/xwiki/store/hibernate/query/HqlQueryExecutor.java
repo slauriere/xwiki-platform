@@ -21,14 +21,19 @@ package com.xpn.xwiki.store.hibernate.query;
 
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Set;
 
 import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
 import org.hibernate.Session;
+import org.hibernate.cfg.Configuration;
+import org.hibernate.engine.NamedQueryDefinition;
 import org.xwiki.component.annotation.Component;
 import org.xwiki.component.phase.Initializable;
 import org.xwiki.component.phase.InitializationException;
@@ -37,9 +42,13 @@ import org.xwiki.query.Query;
 import org.xwiki.query.QueryException;
 import org.xwiki.query.QueryExecutor;
 import org.xwiki.query.QueryFilter;
+import org.xwiki.query.SecureQuery;
+import org.xwiki.security.authorization.ContextualAuthorizationManager;
+import org.xwiki.security.authorization.Right;
 
 import com.xpn.xwiki.XWikiContext;
 import com.xpn.xwiki.XWikiException;
+import com.xpn.xwiki.internal.store.hibernate.query.HqlQueryUtils;
 import com.xpn.xwiki.store.XWikiHibernateBaseStore.HibernateCallback;
 import com.xpn.xwiki.store.XWikiHibernateStore;
 import com.xpn.xwiki.store.hibernate.HibernateSessionFactory;
@@ -57,15 +66,15 @@ import com.xpn.xwiki.util.Util;
 public class HqlQueryExecutor implements QueryExecutor, Initializable
 {
     /**
+     * Path to Hibernate mapping with named queries. Configured via component manager.
+     */
+    private static final String MAPPING_PATH = "queries.hbm.xml";
+
+    /**
      * Session factory needed for register named queries mapping.
      */
     @Inject
     private HibernateSessionFactory sessionFactory;
-
-    /**
-     * Path to hibernate mapping with named queries. Configured via component manager.
-     */
-    private String mappingPath = "queries.hbm.xml";
 
     /**
      * Used for access to XWikiContext.
@@ -73,15 +82,57 @@ public class HqlQueryExecutor implements QueryExecutor, Initializable
     @Inject
     private Execution execution;
 
+    @Inject
+    private ContextualAuthorizationManager authorization;
+
+    private Set<String> allowedNamedQueries = new HashSet<>();
+
     @Override
     public void initialize() throws InitializationException
     {
-        this.sessionFactory.getConfiguration().addInputStream(Util.getResourceAsStream(this.mappingPath));
+        Configuration configuration = this.sessionFactory.getConfiguration();
+
+        configuration.addInputStream(Util.getResourceAsStream(MAPPING_PATH));
+
+        // Gather the list of allowed named queries
+        Map<String, NamedQueryDefinition> namedQueries = configuration.getNamedQueries();
+        for (Map.Entry<String, NamedQueryDefinition> query : namedQueries.entrySet()) {
+            if (HqlQueryUtils.isSafe(query.getValue().getQuery())) {
+                this.allowedNamedQueries.add(query.getKey());
+            }
+        }
+    }
+
+    /**
+     * @param statement the statement to evaluate
+     * @return true if the select is allowed for user without PR
+     */
+    protected static boolean isSafeSelect(String statementString)
+    {
+        return HqlQueryUtils.isShortFormStatement(statementString) || HqlQueryUtils.isSafe(statementString);
+    }
+
+    protected void checkAllowed(final Query query) throws QueryException
+    {
+        if (query instanceof SecureQuery && ((SecureQuery) query).isCurrentAuthorChecked()) {
+            if (!this.authorization.hasAccess(Right.PROGRAM)) {
+                if (query.isNamed() && !this.allowedNamedQueries.contains(query.getStatement())) {
+                    throw new QueryException("Named queries requires programming right", query, null);
+                }
+
+                if (!isSafeSelect(query.getStatement())) {
+                    throw new QueryException("The query requires programming right", query, null);
+                }
+            }
+        }
     }
 
     @Override
     public <T> List<T> execute(final Query query) throws QueryException
     {
+        // Make sure the query is allowed in the current context
+        checkAllowed(query);
+
         String oldDatabase = getContext().getWikiId();
         try {
             if (query.getWiki() != null) {
@@ -116,8 +167,8 @@ public class HqlQueryExecutor implements QueryExecutor, Initializable
      * Append the required select clause to HQL short query statements. Short statements are the only way for users
      * without programming rights to perform queries. Such statements can be for example:
      * <ul>
-     *     <li><code>, BaseObject obj where doc.fullName=obj.name and obj.className='XWiki.MyClass'</code></li>
-     *     <li><code>where doc.creationDate > '2008-01-01'</code></li>
+     * <li><code>, BaseObject obj where doc.fullName=obj.name and obj.className='XWiki.MyClass'</code></li>
+     * <li><code>where doc.creationDate > '2008-01-01'</code></li>
      * </ul>
      *
      * @param statement the statement to complete if required.

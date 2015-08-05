@@ -19,6 +19,7 @@
  */
 package org.xwiki.model.reference;
 
+import java.beans.Transient;
 import java.io.Serializable;
 import java.util.Collections;
 import java.util.LinkedList;
@@ -71,9 +72,9 @@ public class EntityReference implements Serializable, Cloneable, Comparable<Enti
      */
     private Map<String, Serializable> parameters;
 
-    private Integer size;
+    private transient Integer size;
 
-    private List<EntityReference> referenceList;
+    private transient List<EntityReference> referenceList;
 
     /**
      * Clone an EntityReference.
@@ -307,6 +308,7 @@ public class EntityReference implements Serializable, Cloneable, Comparable<Enti
     /**
      * @return the root parent of this entity
      */
+    @Transient
     public EntityReference getRoot()
     {
         EntityReference reference = this;
@@ -319,6 +321,7 @@ public class EntityReference implements Serializable, Cloneable, Comparable<Enti
     /**
      * @return a list of references in the parents chain of this reference, ordered from root to this reference.
      */
+    @Transient
     public List<EntityReference> getReversedReferenceChain()
     {
         if (this.referenceList == null) {

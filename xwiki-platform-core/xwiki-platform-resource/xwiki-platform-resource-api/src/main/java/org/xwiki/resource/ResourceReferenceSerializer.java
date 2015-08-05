@@ -39,8 +39,9 @@ public interface ResourceReferenceSerializer<T extends ResourceReference, U>
      * 
      * @param resource the Resource Reference to transform
      * @return the new representation
+     * @throws SerializeResourceReferenceException if there was an error while serializing the XWiki Resource object
      * @throws UnsupportedResourceReferenceException if the passed representation points to an unsupported Resource
      *         Reference type that we don't know how to serialize
      */
-    U serialize(T resource) throws UnsupportedResourceReferenceException;
+    U serialize(T resource) throws SerializeResourceReferenceException, UnsupportedResourceReferenceException;
 }

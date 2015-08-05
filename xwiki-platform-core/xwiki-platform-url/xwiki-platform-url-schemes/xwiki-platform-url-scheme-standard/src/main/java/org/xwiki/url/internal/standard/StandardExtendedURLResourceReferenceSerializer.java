@@ -19,58 +19,31 @@
  */
 package org.xwiki.url.internal.standard;
 
-import javax.inject.Inject;
 import javax.inject.Named;
 import javax.inject.Singleton;
 
 import org.xwiki.component.annotation.Component;
-import org.xwiki.component.manager.ComponentLookupException;
-import org.xwiki.component.manager.ComponentManager;
-import org.xwiki.component.util.DefaultParameterizedType;
 import org.xwiki.resource.ResourceReference;
-import org.xwiki.resource.ResourceReferenceSerializer;
+import org.xwiki.resource.SerializeResourceReferenceException;
 import org.xwiki.resource.UnsupportedResourceReferenceException;
 import org.xwiki.url.ExtendedURL;
+import org.xwiki.url.internal.AbstractExtendedURLResourceReferenceSerializer;
 
 /**
- * Transforms a XWiki Resource instance into a {@link ExtendedURL} object. Note that the serialization
- * performs URL-encoding wherever necessary to generate a valid URL (see http://www.ietf.org/rfc/rfc2396.txt).
- * 
+ * Transforms a XWiki Resource instance into a {@link ExtendedURL} object following the Standard URL format.
+ *
  * @version $Id$
  * @since 6.1M2
  */
 @Component
 @Named("standard")
 @Singleton
-public class StandardExtendedURLResourceReferenceSerializer
-    implements ResourceReferenceSerializer<ResourceReference, ExtendedURL>
+public class StandardExtendedURLResourceReferenceSerializer extends AbstractExtendedURLResourceReferenceSerializer
 {
-    @Inject
-    @Named("context")
-    private ComponentManager componentManager;
-
     @Override
-    public ExtendedURL serialize(ResourceReference reference) throws UnsupportedResourceReferenceException
+    public ExtendedURL serialize(ResourceReference reference)
+        throws SerializeResourceReferenceException, UnsupportedResourceReferenceException
     {
-        // First, try to locate a URL Serializer registered only for this URL scheme
-        ResourceReferenceSerializer<ResourceReference, ExtendedURL> serializer;
-        try {
-            serializer = this.componentManager.getInstance(
-                new DefaultParameterizedType(null, ResourceReferenceSerializer.class,
-                    reference.getClass(), ExtendedURL.class),
-                        String.format("standard/%s", reference.getType().getId()));
-        } catch (ComponentLookupException e) {
-            // Second, if not found, try to locate a URL Serializer registered for all URL schemes
-            try {
-                serializer = this.componentManager.getInstance(
-                    new DefaultParameterizedType(null, ResourceReferenceSerializer.class,
-                        reference.getClass(), ExtendedURL.class), reference.getType().getId());
-            } catch (ComponentLookupException cle) {
-                throw new UnsupportedResourceReferenceException(String.format(
-                    "Failed to find serializer for Resource Reference [%s]", reference, cle));
-            }
-        }
-
-        return serializer.serialize(reference);
+        return serialize(reference, "standard");
     }
 }

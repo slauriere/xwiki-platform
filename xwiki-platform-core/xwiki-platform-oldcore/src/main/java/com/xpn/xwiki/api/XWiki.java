@@ -670,8 +670,7 @@ public class XWiki extends Api
      * @deprecated use query service instead
      */
     @Deprecated
-    public List<String> searchDocuments(String parameterizedWhereClause, List<?> parameterValues)
-        throws XWikiException
+    public List<String> searchDocuments(String parameterizedWhereClause, List<?> parameterValues) throws XWikiException
     {
         return this.xwiki.getStore().searchDocumentsNames(parameterizedWhereClause, parameterValues, getXWikiContext());
     }
@@ -800,7 +799,9 @@ public class XWiki extends Api
      *
      * @param content
      * @return evaluated content if the content contains velocity scripts
+     * @deprecated Since 7.2M1. Use specific rendering/parsing options for the content type you want to parse/render.
      */
+    @Deprecated
     public String parseContent(String content)
     {
         return this.xwiki.parseContent(content, getXWikiContext());
@@ -1593,25 +1594,33 @@ public class XWiki extends Api
     }
 
     /**
-     * API to list all non-hidden spaces in the current wiki.
+     * API to list all spaces in the current wiki.
+     * <p>
+     * Hidden spaces are filtered unless current user enabled them.
      *
      * @return a list of string representing all non-hidden spaces (ie spaces that have non-hidden pages) for the
      *         current wiki
      * @throws XWikiException if something went wrong
+     * @deprecated use query service instead
      */
+    @Deprecated
     public List<String> getSpaces() throws XWikiException
     {
         return this.xwiki.getSpaces(getXWikiContext());
     }
 
     /**
-     * API to list all non-hidden documents in a space.
+     * API to list all documents in a space.
+     * <p>
+     * Hidden spaces are filtered unless current user enabled them.
      *
      * @param spaceReference the local reference of the space for which to return all non-hidden documents
      * @return the list of document names (in the format {@code Space.Page}) for non-hidden documents in the specified
      *         space
      * @throws XWikiException if the loading went wrong
+     * @deprecated use query service instead
      */
+    @Deprecated
     public List<String> getSpaceDocsName(String spaceReference) throws XWikiException
     {
         return this.xwiki.getSpaceDocsName(spaceReference, getXWikiContext());
@@ -1657,6 +1666,41 @@ public class XWiki extends Api
     public String getURL(String fullname) throws XWikiException
     {
         return this.xwiki.getURL(fullname, "view", getXWikiContext());
+    }
+
+    /**
+     * API to retrieve the URL of an an entity in view mode The URL is generated differently depending on the
+     * environement (Servlet, Portlet, PDF, etc..) The URL generation can be modified by implementing a new
+     * XWikiURLFactory object For compatibility with any target environement (and especially the portlet environment) It
+     * is important to always use the URL functions to generate URL and never hardcode URLs
+     *
+     * @param reference the reference to the entity for which to return the URL for
+     * @return a URL as a string pointing to the entity in view mode
+     * @throws XWikiException if the URL could not be generated properly
+     * @since 7.2M1
+     */
+    public String getURL(EntityReference reference) throws XWikiException
+    {
+        return this.xwiki.getURL(reference, "view", getXWikiContext());
+    }
+
+    /**
+     * API to retrieve the URL of an entity in any mode, optionally adding a query string The URL is generated
+     * differently depending on the environment (Servlet, Portlet, PDF, etc..) The URL generation can be modified by
+     * implementing a new XWikiURLFactory object. The query string will be modified to be added in the way the
+     * environment needs it. It is important to not add the query string parameter manually after a URL. Some
+     * environments will not accept this (like the Portlet environement).
+     *
+     * @param reference the reference to the entity for which to return the URL for
+     * @param action the mode in which to access the entity (view/edit/save/..). Any valid XWiki action is possible
+     * @param querystring the Query String to provide in the usual mode (name1=value1&name2=value=2) including encoding
+     * @return a URL as a string pointing to the entity
+     * @throws XWikiException if the URL could not be generated properly
+     * @since 7.2M1
+     */
+    public String getURL(EntityReference reference, String action, String querystring) throws XWikiException
+    {
+        return this.xwiki.getURL(reference, action, querystring, null, getXWikiContext());
     }
 
     /**

@@ -114,6 +114,8 @@ import org.xwiki.mail.MailSenderConfiguration;
 import org.xwiki.mail.MailStatusResultSerializer;
 import org.xwiki.mail.XWikiAuthenticator;
 import org.xwiki.model.EntityType;
+import org.xwiki.model.reference.AttachmentReference;
+import org.xwiki.model.reference.AttachmentReferenceResolver;
 import org.xwiki.model.reference.DocumentReference;
 import org.xwiki.model.reference.DocumentReferenceResolver;
 import org.xwiki.model.reference.EntityReference;
@@ -122,6 +124,7 @@ import org.xwiki.model.reference.EntityReferenceSerializer;
 import org.xwiki.model.reference.ObjectReference;
 import org.xwiki.model.reference.RegexEntityReference;
 import org.xwiki.model.reference.SpaceReference;
+import org.xwiki.model.reference.SpaceReferenceResolver;
 import org.xwiki.model.reference.WikiReference;
 import org.xwiki.observation.EventListener;
 import org.xwiki.observation.ObservationManager;
@@ -372,6 +375,9 @@ public class XWiki implements EventListener
     private EntityReferenceResolver<String> relativeEntityReferenceResolver = Utils.getComponent(
         EntityReferenceResolver.TYPE_STRING, "relative");
 
+    private EntityReferenceSerializer<String> localStringEntityReferenceSerializer = Utils.getComponent(
+        EntityReferenceSerializer.TYPE_STRING, "local");
+
     @SuppressWarnings("deprecation")
     private SyntaxFactory syntaxFactory = Utils.getComponent((Type) SyntaxFactory.class);
 
@@ -415,6 +421,10 @@ public class XWiki implements EventListener
     private Provider<DocumentReference> defaultDocumentReferenceProvider;
 
     private DocumentReferenceResolver<EntityReference> currentgetdocumentResolver;
+
+    private AttachmentReferenceResolver<EntityReference> currentAttachmentReferenceResolver;
+
+    private SpaceReferenceResolver<String> currentSpaceResolver;
 
     private ConfigurationSource getConfiguration()
     {
@@ -556,6 +566,25 @@ public class XWiki implements EventListener
         }
 
         return this.currentgetdocumentResolver;
+    }
+
+    private AttachmentReferenceResolver<EntityReference> getCurrentAttachmentResolver()
+    {
+        if (this.currentAttachmentReferenceResolver == null) {
+            this.currentAttachmentReferenceResolver =
+                Utils.getComponent(AttachmentReferenceResolver.TYPE_REFERENCE, "current");
+        }
+
+        return this.currentAttachmentReferenceResolver;
+    }
+
+    private SpaceReferenceResolver<String> getCurrentSpaceResolver()
+    {
+        if (this.currentSpaceResolver == null) {
+            this.currentSpaceResolver = Utils.getComponent(SpaceReferenceResolver.TYPE_STRING, "current");
+        }
+
+        return this.currentSpaceResolver;
     }
 
     private DocumentReference getDefaultDocumentReference()
@@ -1744,6 +1773,10 @@ public class XWiki implements EventListener
         return getStore().search(sql, nb, start, whereParams, context);
     }
 
+    /**
+     * @deprecated Since 7.2M1. Use specific rendering/parsing options for the content type you want to parse/render.
+     */
+    @Deprecated
     public String parseContent(String content, XWikiContext xcontext)
     {
         return getOldRendering().parseContent(content, xcontext);
@@ -4147,6 +4180,34 @@ public class XWiki implements EventListener
     }
 
     /**
+     * @since 7.2M1
+     */
+    public String getURL(EntityReference entityReference, String action, String queryString, String anchor,
+        XWikiContext context)
+    {
+        // TODO: replace this API with a clean implementation of EntityResourceReferenceSerializer
+
+        // Handle attachment URL
+        if (EntityType.ATTACHMENT.equals(entityReference.getType())) {
+            // Get the full attachment reference
+            AttachmentReference attachmentReference = getCurrentAttachmentResolver().resolve(entityReference);
+            return getAttachmentURL(attachmentReference, action, queryString, context);
+        }
+
+        // For all other types, we return the URL of the default corresponding document.
+        DocumentReference documentReference = getCurrentGetDocumentResolver().resolve(entityReference);
+        return getURL(documentReference, action, queryString, anchor, context);
+    }
+
+    /**
+     * @since 7.2M1
+     */
+    public String getURL(EntityReference reference, String action, XWikiContext context)
+    {
+        return getURL(reference, action, null, null, context);
+    }
+
+    /**
      * @since 2.2.1
      */
     public String getURL(DocumentReference documentReference, String action, String queryString, String anchor,
@@ -4158,8 +4219,9 @@ public class XWiki implements EventListener
             documentReference.getLastSpaceReference().removeParent(documentReference.getWikiReference());
         String spaces = this.defaultEntityReferenceSerializer.serialize(spaceReference);
 
-        URL url = context.getURLFactory().createURL(spaces, documentReference.getName(), action, queryString, anchor,
-            documentReference.getWikiReference().getName(), context);
+        URL url =
+            context.getURLFactory().createURL(spaces, documentReference.getName(), action, queryString, anchor,
+                documentReference.getWikiReference().getName(), context);
 
         return context.getURLFactory().getURL(url, context);
     }
@@ -4217,6 +4279,56 @@ public class XWiki implements EventListener
         return url.toString();
     }
 
+    /**
+     * @since 7.2M1
+     */
+    public String getAttachmentURL(AttachmentReference attachmentReference, String action, String queryString,
+        XWikiContext context)
+    {
+        DocumentReference documentReference = attachmentReference.getDocumentReference();
+        SpaceReference spaceReference = documentReference.getLastSpaceReference();
+        WikiReference wikiReference = spaceReference.getWikiReference();
+
+        // We need to serialize the space reference because the old URLFactory has no method to create an Attachment URL
+        // from an AttachmentReference...
+        String serializedSpace = localStringEntityReferenceSerializer.serialize(spaceReference);
+
+        URL url =
+            context.getURLFactory().createAttachmentURL(attachmentReference.getName(), serializedSpace,
+                documentReference.getName(), action, queryString, wikiReference.getName(), context);
+
+        return context.getURLFactory().getURL(url, context);
+    }
+
+    /**
+     * @since 7.2M1
+     */
+    public String getAttachmentURL(AttachmentReference attachmentReference, String queryString, XWikiContext context)
+    {
+        return getAttachmentURL(attachmentReference, "download", queryString, context);
+    }
+
+    /**
+     * @since 7.2M1
+     */
+    public String getAttachmentRevisionURL(AttachmentReference attachmentReference, String revision,
+        String queryString, XWikiContext context)
+    {
+        DocumentReference documentReference = attachmentReference.getDocumentReference();
+        SpaceReference spaceReference = documentReference.getLastSpaceReference();
+        WikiReference wikiReference = spaceReference.getWikiReference();
+
+        // We need to serialize the space reference because the old URLFactory has no method to create an Attachment URL
+        // from an AttachmentReference...
+        String serializedSpace = localStringEntityReferenceSerializer.serialize(spaceReference);
+
+        URL url =
+            context.getURLFactory().createAttachmentRevisionURL(attachmentReference.getName(), serializedSpace,
+                documentReference.getName(), revision, queryString, wikiReference.getName(), context);
+
+        return context.getURLFactory().getURL(url, context);
+    }
+
     public String getAttachmentURL(String fullname, String filename, XWikiContext context) throws XWikiException
     {
         return getAttachmentURL(fullname, filename, null, context);
@@ -4228,8 +4340,10 @@ public class XWiki implements EventListener
     public String getAttachmentURL(String fullname, String filename, String queryString, XWikiContext context)
         throws XWikiException
     {
-        XWikiDocument doc = new XWikiDocument(this.currentMixedDocumentReferenceResolver.resolve(fullname));
-        return doc.getAttachmentURL(filename, "download", queryString, context);
+        AttachmentReference attachmentReference =
+            new AttachmentReference(filename, this.currentMixedDocumentReferenceResolver.resolve(fullname));
+
+        return getAttachmentURL(attachmentReference, queryString, context);
     }
 
     // Usefull date functions
@@ -4874,7 +4988,7 @@ public class XWiki implements EventListener
                 }
                 text =
                     evaluateVelocity(format, "<username formatting code in " + context.getDoc().getDocumentReference()
-                        + ">", vcontext, context);
+                        + ">", vcontext);
             }
 
             if (escapeXML || link) {
@@ -4894,7 +5008,15 @@ public class XWiki implements EventListener
         }
     }
 
-    private String evaluateVelocity(String content, String name, VelocityContext vcontext, XWikiContext context)
+    /**
+     * @param content the Velocity content to evaluate
+     * @param name the namespace under which to evaluate it (used for isolation)
+     * @param vcontext the Velocity context to use when evaluating. If {@code null}, then a new context will be created,
+     *            initialized and used.
+     * @return the evaluated content
+     * @since 7.2M1
+     */
+    public String evaluateVelocity(String content, String name, VelocityContext vcontext)
     {
         StringWriter writer = new StringWriter();
         try {
@@ -4902,13 +5024,37 @@ public class XWiki implements EventListener
             velocityManager.getVelocityEngine().evaluate(vcontext, writer, name, content);
             return writer.toString();
         } catch (Exception e) {
-            LOGGER.error("Error while parsing velocity template namespace [{}]", name, e);
-            Object[] args = { name };
+            LOGGER.error("Error while parsing velocity template namespace [{}] with content:\n[{}]", name, content, e);
+            Object[] args = {name};
             XWikiException xe =
                 new XWikiException(XWikiException.MODULE_XWIKI_RENDERING,
                     XWikiException.ERROR_XWIKI_RENDERING_VELOCITY_EXCEPTION, "Error while parsing velocity page {0}",
                     e, args);
-            return Util.getHTMLExceptionMessage(xe, context);
+            return Util.getHTMLExceptionMessage(xe, null);
+        }
+    }
+
+    /**
+     * @param content the Velocity content to evaluate
+     * @param name the namespace under which to evaluate it (used for isolation)
+     * @return the evaluated content
+     * @since 7.2M1
+     */
+    public String evaluateVelocity(String content, String name)
+    {
+        StringWriter writer = new StringWriter();
+        try {
+            VelocityManager velocityManager = Utils.getComponent(VelocityManager.class);
+            VelocityContext velocityContext = velocityManager.getVelocityContext();
+            return evaluateVelocity(content, name, velocityContext);
+        } catch (Exception e) {
+            LOGGER.error("Error while parsing velocity template namespace [{}] with content:\n[{}]", name, content, e);
+            Object[] args = {name};
+            XWikiException xe =
+                new XWikiException(XWikiException.MODULE_XWIKI_RENDERING,
+                    XWikiException.ERROR_XWIKI_RENDERING_VELOCITY_EXCEPTION, "Error while parsing velocity page {0}",
+                    e, args);
+            return Util.getHTMLExceptionMessage(xe, null);
         }
     }
 
@@ -5256,12 +5402,16 @@ public class XWiki implements EventListener
     }
 
     /**
-     * API to list all non-hidden spaces in the current wiki.
+     * API to list all spaces in the current wiki.
+     * <p>
+     * Hidden spaces are filtered unless current user enabled them.
      *
      * @return a list of string representing all non-hidden spaces (ie spaces that have non-hidden pages) for the
      *         current wiki
      * @throws XWikiException if something went wrong
+     * @deprecated use query service instead
      */
+    @Deprecated
     public List<String> getSpaces(XWikiContext context) throws XWikiException
     {
         try {
@@ -5279,13 +5429,15 @@ public class XWiki implements EventListener
      * @return the list of document names (in the format {@code Space.Page}) for non-hidden documents in the specified
      *         space
      * @throws XWikiException if the loading went wrong
+     * @deprecated use query service instead
      */
+    @Deprecated
     public List<String> getSpaceDocsName(String spaceReference, XWikiContext context) throws XWikiException
     {
         try {
             return getStore().getQueryManager().getNamedQuery("getSpaceDocsName")
-                .addFilter(Utils.<QueryFilter>getComponent(QueryFilter.class, "hidden")).bindValue("space", spaceReference)
-                .execute();
+                .addFilter(Utils.<QueryFilter>getComponent(QueryFilter.class, "hidden"))
+                .bindValue("space", spaceReference).execute();
         } catch (QueryException ex) {
             throw new XWikiException(0, 0, ex.getMessage(), ex);
         }

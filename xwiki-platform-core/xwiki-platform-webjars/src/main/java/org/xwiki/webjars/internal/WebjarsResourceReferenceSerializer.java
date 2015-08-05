@@ -28,12 +28,13 @@ import javax.inject.Singleton;
 
 import org.xwiki.component.annotation.Component;
 import org.xwiki.resource.ResourceReferenceSerializer;
+import org.xwiki.resource.SerializeResourceReferenceException;
 import org.xwiki.resource.UnsupportedResourceReferenceException;
 import org.xwiki.url.ExtendedURL;
 import org.xwiki.url.URLNormalizer;
 
 /**
- * Converts a {@link WebJarsResourceReference} into a {@link ExtendedURL} (with the Context Path added).
+ * Converts a {@link WebJarsResourceReference} into a relative {@link ExtendedURL} (with the Context Path added).
  *
  * @version $Id$
  * @since 7.1M1
@@ -49,7 +50,7 @@ public class WebjarsResourceReferenceSerializer
 
     @Override
     public ExtendedURL serialize(WebJarsResourceReference resourceReference)
-        throws UnsupportedResourceReferenceException
+        throws SerializeResourceReferenceException, UnsupportedResourceReferenceException
     {
         List<String> segments = new ArrayList<>();
 

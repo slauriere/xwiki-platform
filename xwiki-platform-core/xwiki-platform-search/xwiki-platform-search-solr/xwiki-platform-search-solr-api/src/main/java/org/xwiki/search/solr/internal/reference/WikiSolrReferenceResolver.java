@@ -74,19 +74,19 @@ public class WikiSolrReferenceResolver extends AbstractSolrReferenceResolver
 
         // Ignore the wiki reference because it is not indexable.
 
-        List<String> spaces = null;
+        List<String> localSpaceRefs = null;
 
         // Make sure the list of spaces is from the requested wiki.
         try {
-            spaces = this.queryManager.getNamedQuery("getSpaces").setWiki(wikiReference.getName()).execute();
+            localSpaceRefs = this.queryManager.getNamedQuery("getSpaces").setWiki(wikiReference.getName()).execute();
         } catch (QueryException e) {
             throw new SolrIndexerException("Failed to query wiki [" + wikiReference.getName() + "] spaces", e);
         }
 
         // Visit each space
-        for (String space : spaces) {
+        for (String localSpaceRef : localSpaceRefs) {
             EntityReference spaceReference =
-                this.explicitEntityReferenceResolver.resolve(space, EntityType.SPACE, wikiReference);
+                this.explicitEntityReferenceResolver.resolve(localSpaceRef, EntityType.SPACE, wikiReference);
 
             try {
                 Iterables.addAll(result, this.spaceResolverProvider.get().getReferences(spaceReference));

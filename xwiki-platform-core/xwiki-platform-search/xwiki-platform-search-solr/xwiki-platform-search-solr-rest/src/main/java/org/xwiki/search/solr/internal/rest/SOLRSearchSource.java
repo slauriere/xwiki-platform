@@ -41,6 +41,7 @@ import org.xwiki.model.reference.DocumentReferenceResolver;
 import org.xwiki.model.reference.EntityReferenceSerializer;
 import org.xwiki.query.Query;
 import org.xwiki.query.QueryManager;
+import org.xwiki.query.SecureQuery;
 import org.xwiki.query.solr.internal.SolrQueryExecutor;
 import org.xwiki.rest.Relations;
 import org.xwiki.rest.internal.Utils;
@@ -93,6 +94,11 @@ public class SOLRSearchSource extends AbstractSearchSource
         }
 
         Query query = this.queryManager.createQuery(queryString, SolrQueryExecutor.SOLR);
+
+        if (query instanceof SecureQuery) {
+            // Show only what the current user has the right to see
+            ((SecureQuery) query).checkCurrentUser(true);
+        }
 
         List<String> fq = new ArrayList<String>();
 
@@ -163,8 +169,8 @@ public class SOLRSearchSource extends AbstractSearchSource
                 searchResult.setVersion((String) document.get(FieldUtils.VERSION));
 
                 searchResult.setType("page");
-                searchResult.setId(Utils.getPageId(searchResult.getWiki(), searchResult.getSpace(),
-                    searchResult.getPageName()));
+                searchResult.setId(Utils.getPageId(searchResult.getWiki(),
+                    Utils.getSpacesFromSpaceId(searchResult.getSpace()), searchResult.getPageName()));
 
                 searchResult.setScore(((Number) document.get(FieldUtils.SCORE)).floatValue());
                 searchResult.setAuthor((String) document.get(FieldUtils.AUTHOR));
@@ -178,16 +184,18 @@ public class SOLRSearchSource extends AbstractSearchSource
 
                 Locale locale = LocaleUtils.toLocale((String) document.get(FieldUtils.DOCUMENT_LOCALE));
 
+                List<String> spaces = Utils.getSpacesHierarchy(documentReference.getLastSpaceReference());
+
                 String pageUri = null;
                 if (Locale.ROOT == locale) {
                     pageUri =
                         Utils.createURI(uriInfo.getBaseUri(), PageResource.class, searchResult.getWiki(),
-                            searchResult.getSpace(), searchResult.getPageName()).toString();
+                                spaces, searchResult.getPageName()).toString();
                 } else {
                     searchResult.setLanguage(locale.toString());
                     pageUri =
-                        Utils.createURI(uriInfo.getBaseUri(), PageTranslationResource.class, searchResult.getSpace(),
-                            searchResult.getPageName(), locale).toString();
+                        Utils.createURI(uriInfo.getBaseUri(), PageTranslationResource.class, spaces,
+                                searchResult.getPageName(), locale).toString();
                 }
 
                 Link pageLink = new Link();

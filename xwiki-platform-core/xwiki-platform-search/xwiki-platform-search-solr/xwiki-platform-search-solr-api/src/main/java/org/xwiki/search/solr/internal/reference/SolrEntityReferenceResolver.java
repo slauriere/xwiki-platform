@@ -37,7 +37,7 @@ import org.xwiki.search.solr.internal.api.FieldUtils;
  * Component used to extract an {@link EntityReference} from a {@link SolrDocument}.
  * 
  * @version $Id$
- * @since 7.2M1
+ * @since 7.2M2
  */
 @Component
 @Singleton
